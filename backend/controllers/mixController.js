@@ -94,11 +94,15 @@ const exportPDF = async (req, res) => {
     doc.text(`Cement Type: ${inputs.cementType}`);
     doc.text(`Max Aggregate Size: ${inputs.maxAggregateSize} mm`);
     doc.text(`Exposure Condition: ${inputs.exposureCondition}`);
+    doc.text(`Concrete Type: ${inputs.concreteType || 'reinforced'}`);
     doc.text(`Slump: ${inputs.slump} mm`);
     doc.text(`Fine Aggregate Zone: ${inputs.faZone}`);
     doc.text(`Specific Gravity - Cement: ${inputs.spGravityCement}`);
     doc.text(`Specific Gravity - Fine Aggregate: ${inputs.spGravityFa}`);
     doc.text(`Specific Gravity - Coarse Aggregate: ${inputs.spGravityCa}`);
+    doc.text(`Coarse Aggregate Water Absorption: ${inputs.caWaterAbsorption ?? 0}%`);
+    doc.text(`Fine Aggregate Water Absorption: ${inputs.faWaterAbsorption ?? 0}%`);
+    doc.text(`Wastage: ${inputs.wastagePercentage ?? 3}%`);
     doc.moveDown(1);
 
     // Detailed Calculation Steps
@@ -166,6 +170,18 @@ const exportPDF = async (req, res) => {
     doc.text(`• Fine Aggregate: ${finalMix.fa} kg/m³`);
     doc.text(`• Coarse Aggregate: ${finalMix.ca} kg/m³`);
     doc.text(`• Water-Cement Ratio: ${finalMix.w_c_ratio}`);
+
+    const corrections = mix.resultData.corrections;
+    const baseMix = mix.resultData.baseMix;
+    if (corrections && baseMix) {
+      doc.moveDown(0.75);
+      doc.fontSize(12).font('Helvetica-Bold').text('Corrections Applied');
+      doc.fontSize(10).font('Helvetica');
+      doc.text(`Entrapped Air: ${corrections.entrappedAirPercent}% (${corrections.airVolume} m³)`);
+      doc.text(`Absorption Water: ${corrections.totalAbsorptionWater} kg/m³ (FA ${corrections.faAbsorptionWater}, CA ${corrections.caAbsorptionWater})`);
+      doc.text(`Wastage: ${corrections.wastagePercentage}% (cement, fine aggregate, coarse aggregate only)`);
+      doc.text(`Base Mix: Cement ${baseMix.cement}, Water ${baseMix.water}, FA ${baseMix.fa}, CA ${baseMix.ca} kg/m³`);
+    }
 
     if (mix.resultData.specimenResult) {
       doc.moveDown(1);
@@ -258,11 +274,15 @@ const exportExcel = async (req, res) => {
       ['Cement Type', inputs.cementType],
       ['Max Aggregate Size', `${inputs.maxAggregateSize} mm`],
       ['Exposure Condition', inputs.exposureCondition],
+      ['Concrete Type', inputs.concreteType || 'reinforced'],
       ['Slump', `${inputs.slump} mm`],
       ['Fine Aggregate Zone', inputs.faZone],
       ['Specific Gravity - Cement', inputs.spGravityCement],
       ['Specific Gravity - Fine Aggregate', inputs.spGravityFa],
-      ['Specific Gravity - Coarse Aggregate', inputs.spGravityCa]
+      ['Specific Gravity - Coarse Aggregate', inputs.spGravityCa],
+      ['Coarse Aggregate Water Absorption', `${inputs.caWaterAbsorption ?? 0}%`],
+      ['Fine Aggregate Water Absorption', `${inputs.faWaterAbsorption ?? 0}%`],
+      ['Wastage', `${inputs.wastagePercentage ?? 3}%`]
     ];
 
     inputData.forEach(([label, value]) => {
@@ -292,6 +312,28 @@ const exportExcel = async (req, res) => {
       summarySheet.getCell(`B${row}`).value = value;
       row++;
     });
+
+    const corrections = mix.resultData.corrections;
+    const baseMix = mix.resultData.baseMix;
+    if (corrections && baseMix) {
+      row += 1;
+      summarySheet.getCell(`A${row}`).value = 'Corrections Applied';
+      summarySheet.getCell(`A${row}`).font = { bold: true };
+      row++;
+      [
+        ['Base Cement', baseMix.cement],
+        ['Base Water', baseMix.water],
+        ['Base Fine Aggregate', baseMix.fa],
+        ['Base Coarse Aggregate', baseMix.ca],
+        ['Entrapped Air', `${corrections.entrappedAirPercent}% (${corrections.airVolume} m³)`],
+        ['Absorption Water', `${corrections.totalAbsorptionWater} kg/m³`],
+        ['Wastage', `${corrections.wastagePercentage}%`]
+      ].forEach(([label, value]) => {
+        summarySheet.getCell(`A${row}`).value = label;
+        summarySheet.getCell(`B${row}`).value = value;
+        row++;
+      });
+    }
 
     if (mix.resultData.specimenResult) {
       row += 1;

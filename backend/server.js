@@ -19,9 +19,13 @@ app.use('/api/mix', require('./routes/mix'));
 app.get('/', (req, res) => res.send('Concrete Mix API Running'));
 
 // MongoDB connection
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log('MongoDB connected'))
-  .catch(err => console.log(err));
+if (process.env.MONGO_URI) {
+  mongoose.connect(process.env.MONGO_URI)
+    .then(() => console.log('MongoDB connected'))
+    .catch(err => console.error('MongoDB connection failed:', err.message));
+} else {
+  console.warn('MONGO_URI is not configured; database features are unavailable.');
+}
 
 // Error handling
 app.use((err, req, res, next) => {

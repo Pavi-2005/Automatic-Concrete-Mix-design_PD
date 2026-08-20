@@ -11,6 +11,7 @@ const mixDesignSchema = new mongoose.Schema({
     cementType: String,
     maxAggregateSize: Number,
     exposureCondition: String,
+    concreteType: { type: String, default: 'reinforced' },
     minCementContent: Number,
     slump: Number,
     placingMethod: String,
@@ -22,11 +23,16 @@ const mixDesignSchema = new mongoose.Schema({
     spGravityCa: Number,
     mineralAdmixtureType: String,
     waterCementRatio: Number,
+    caWaterAbsorption: { type: Number, default: 0 },
+    faWaterAbsorption: { type: Number, default: 0 },
+    wastagePercentage: { type: Number, default: 3 },
     specimenType: { type: String, default: 'cube' },
     specimenCount: { type: Number, default: 1 }
   },
   resultData: {
     steps: [mongoose.Mixed],
+    baseMix: mongoose.Mixed,
+    corrections: mongoose.Mixed,
     finalMix: {
       cement: Number,
       water: Number,

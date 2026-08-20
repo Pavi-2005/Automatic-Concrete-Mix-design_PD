@@ -8,7 +8,8 @@ const Calculator = () => {
     cementType: 'OPC 43',
     maxAggregateSize: 20,
     exposureCondition: 'moderate',
-    minCementContent: 300,
+    concreteType: 'reinforced',
+    minCementContent: 0,
     slump: 50,
     placingMethod: 'vibrated',
     standardDeviation: 5,
@@ -21,7 +22,10 @@ const Calculator = () => {
     needSuperplasticizer: false,
     superplasticizerPercentage: 0,
     specimenType: 'cube',
-    specimenCount: 1
+    specimenCount: 1,
+    caWaterAbsorption: 0,
+    faWaterAbsorption: 0,
+    wastagePercentage: 3
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -128,6 +132,14 @@ const Calculator = () => {
           </div>
 
           <div className="field-row">
+            <label>Concrete Type</label>
+            <select value={formData.concreteType} onChange={e => setFormData({...formData, concreteType: e.target.value})}>
+              <option value="reinforced">Reinforced Concrete</option>
+              <option value="plain">Plain Concrete</option>
+            </select>
+          </div>
+
+          <div className="field-row">
             <label>Slump (mm)</label>
             <input type="number" min="25" max="150" value={formData.slump} onChange={e => setFormData({...formData, slump: parseFloat(e.target.value)})} />
           </div>
@@ -188,6 +200,23 @@ const Calculator = () => {
           <div className="field-row">
             <label>Coarse Aggregate Specific Gravity</label>
             <input type="number" step="0.01" value={formData.spGravityCa} onChange={e => setFormData({...formData, spGravityCa: parseFloat(e.target.value)})} />
+          </div>
+
+          <div className="field-row">
+            <label>Coarse Aggregate Water Absorption (%)</label>
+            <input type="number" min="0" step="0.1" value={formData.caWaterAbsorption} onChange={e => setFormData({...formData, caWaterAbsorption: parseFloat(e.target.value) || 0})} />
+            {formData.caWaterAbsorption > 2 && <p style={{color: 'red', fontSize: '0.8em'}}>Above the recommended 2% limit.</p>}
+          </div>
+
+          <div className="field-row">
+            <label>Fine Aggregate Water Absorption (%)</label>
+            <input type="number" min="0" step="0.1" value={formData.faWaterAbsorption} onChange={e => setFormData({...formData, faWaterAbsorption: parseFloat(e.target.value) || 0})} />
+            {formData.faWaterAbsorption > 3 && <p style={{color: 'red', fontSize: '0.8em'}}>Above the recommended 3% limit.</p>}
+          </div>
+
+          <div className="field-row">
+            <label>Wastage (%)</label>
+            <input type="number" min="0" step="0.1" value={formData.wastagePercentage} onChange={e => setFormData({...formData, wastagePercentage: parseFloat(e.target.value) || 0})} />
           </div>
 
           <button type="submit" disabled={loading}>{loading ? 'Calculating...' : 'Calculate'}</button>

@@ -77,6 +77,7 @@ const renderStepDetails = (step) => {
           <div className="values">
             <span>CA Volume Ratio = {step.caVolumeRatio}</span>
             <span>Air Content = {step.airContent}%</span>
+            {step.airVolume && <span>Entrapped Air Volume = {step.airVolume} m³</span>}
             <span>Fine Aggregate = {step.faContent} kg/m³</span>
             <span>Coarse Aggregate = {step.caContent} kg/m³</span>
           </div>
@@ -86,12 +87,13 @@ const renderStepDetails = (step) => {
       return (
         <div className="calculation-details">
           <div className="formula">
-            <strong>IS 10262:2019 Clause 5.6</strong> - Surface Moisture & Absorption
+            <strong>Dry Aggregate Correction</strong> - Absorption Water & Wastage
           </div>
           <div className="values">
             <span>Additional Water = {step.moistureCorrections.additionalWater} kg/m³</span>
             <span>FA Absorption = {step.moistureCorrections.faAbsorption}%</span>
             <span>CA Absorption = {step.moistureCorrections.caAbsorption}%</span>
+            {step.moistureCorrections.wastagePercentage != null && <span>Wastage = {step.moistureCorrections.wastagePercentage}%</span>}
           </div>
         </div>
       );
@@ -150,6 +152,8 @@ const Result = () => {
   );
 
   const { steps, finalMix, specimenResult } = result.resultData;
+  const baseMix = result.resultData.baseMix || finalMix;
+  const corrections = result.resultData.corrections;
   const computedSpecimenVolume = specimenResult?.specimenVolume ?? getSpecimenVolume(specimenResult?.specimenType);
   const computedPerSpecimenMix = specimenResult?.perSpecimenMix ?? {
     volume_m3: computedSpecimenVolume,
@@ -176,6 +180,46 @@ const Result = () => {
           ← Back to History
         </button>
         <h2>Mix Design Results</h2>
+
+        {corrections && (
+          <section style={{ marginTop: '2rem' }}>
+            <h3>Base Mix, Corrections Applied & Final Corrected Mix</h3>
+            <div style={{ overflowX: 'auto', marginTop: '1rem' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '560px' }}>
+                <thead>
+                  <tr style={{ background: '#eff6ff', textAlign: 'left' }}>
+                    <th style={{ padding: '0.75rem' }}>Material</th>
+                    <th style={{ padding: '0.75rem' }}>Base (kg/m³)</th>
+                    <th style={{ padding: '0.75rem' }}>Correction</th>
+                    <th style={{ padding: '0.75rem' }}>Final (kg/m³)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[
+                    ['Cement', 'cement', `Wastage +${corrections.wastage?.cement ?? 0} kg`],
+                    ['Water', 'water', `Absorption +${corrections.totalAbsorptionWater ?? 0} kg`],
+                    ['Fine Aggregate', 'fa', `Wastage +${corrections.wastage?.fa ?? 0} kg`],
+                    ['Coarse Aggregate', 'ca', `Wastage +${corrections.wastage?.ca ?? 0} kg`]
+                  ].map(([label, key, correction]) => (
+                    <tr key={key} style={{ borderTop: '1px solid #d1d5db' }}>
+                      <td style={{ padding: '0.75rem' }}>{label}</td>
+                      <td style={{ padding: '0.75rem' }}>{baseMix[key]}</td>
+                      <td style={{ padding: '0.75rem' }}>{correction}</td>
+                      <td style={{ padding: '0.75rem', fontWeight: '600' }}>{finalMix[key]}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p style={{ marginTop: '1rem', color: '#374151' }}>
+              Entrapped Air = {corrections.entrappedAirPercent}% ({corrections.airVolume} m³); CA Absorption = {corrections.caWaterAbsorption}%; FA Absorption = {corrections.faWaterAbsorption}%; Wastage = {corrections.wastagePercentage}%.
+            </p>
+            {corrections.exposure && <p style={{ color: '#374151' }}>
+              Exposure limit ({corrections.exposure.concreteType}): min cement {corrections.exposure.minCement} kg/m³, max free w/c {corrections.exposure.maxWc}, min grade {corrections.exposure.minGrade || '—'}.
+            </p>}
+            {corrections.warnings?.map(warning => <p key={warning} className="error-message">{warning}</p>)}
+          </section>
+        )}
         
         <section style={{ marginTop: '2rem' }}>
           <h3>📊 Final Mix Proportions</h3>
