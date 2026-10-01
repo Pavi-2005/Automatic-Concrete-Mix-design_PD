@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { mixAPI } from '../services/api';
+import { downloadBlob, mixAPI } from '../services/api';
 
 // Helper functions for detailed step rendering
 const getStepTitle = (stepNumber) => {
@@ -46,13 +46,15 @@ const renderStepDetails = (step) => {
       return (
         <div className="calculation-details">
           <div className="formula">
-            <strong>IS 10262:2019 Table 4</strong> + Slump Adjustment + Superplasticizer Reduction
+            <strong>IS 10262:2019 Table 4</strong> + Aggregate Shape + Slump Adjustment + Superplasticizer Reduction
           </div>
           <div className="values">
             <span>Base Water Content = {step.baseWater} kg/m³</span>
-            <span>Slump Adjustment = {step.slumpAdjustment} kg/m³</span>
+            <span>Slump Adjustment = {step.slumpAdjustment}%</span>
+            <span>Aggregate Shape = {step.aggregateShape || 'angular'}; Water Adjustment = {step.aggregateShapeWaterAdjustment ?? 0} kg/m³</span>
             <span>Superplasticizer Reduction = {step.superplasticizerReduction}%</span>
             <span><strong>Total = {step.waterContent} kg/m³</strong></span>
+            {step.note && <span>{step.note}</span>}
           </div>
         </div>
       );
@@ -65,6 +67,10 @@ const renderStepDetails = (step) => {
           <div className="values">
             <span>Cement Content = {step.cementContent} kg/m³</span>
             <span>Limits = {step.cementLimits}</span>
+            {step.cementCapped && <span>Cement limit applied: maximum cap.</span>}
+            {step.cementFloored && <span>Cement limit applied: minimum requirement.</span>}
+            {step.cementCapWaterAdjustment != null && <span>Water adjustment for cement limit = {step.cementCapWaterAdjustment} kg/m³</span>}
+            {step.note && <span>{step.note}</span>}
           </div>
         </div>
       );
@@ -76,6 +82,7 @@ const renderStepDetails = (step) => {
           </div>
           <div className="values">
             <span>CA Volume Ratio = {step.caVolumeRatio}</span>
+            {step.pumpCaReductionPercent > 0 && <span>Pump CA Reduction = {step.pumpCaReductionPercent}% (ratio before reduction: {step.caVolumeRatioBeforePumpReduction})</span>}
             <span>Air Content = {step.airContent}%</span>
             {step.airVolume && <span>Entrapped Air Volume = {step.airVolume} m³</span>}
             <span>Fine Aggregate = {step.faContent} kg/m³</span>
@@ -109,7 +116,7 @@ const getStepExplanation = (stepNumber) => {
     3: 'Water content is determined from IS 10262:2019 Table 4 based on maximum aggregate size. Additional water is added for slump requirements (±3 kg/m³ per 25mm slump change from reference).',
     4: 'Cement content is calculated as water content divided by water-cement ratio. IS 10262:2019 specifies minimum cement contents based on exposure conditions to ensure durability.',
     5: 'Aggregate proportions use volume ratios from IS 10262:2019 Table 5. The coarse aggregate volume ratio varies by fine aggregate zone and maximum aggregate size. Air content is estimated from Table 6.',
-    6: 'Moisture corrections account for surface moisture in aggregates (which adds water) and water absorption by aggregates (which requires additional water to maintain SSD condition).'
+    6: 'Only aggregate absorption correction is applied when batching dry aggregates. Surface moisture is not collected or modeled, so the displayed batch water assumes zero free surface moisture.'
   };
   return explanations[stepNumber] || '';
 };
@@ -390,11 +397,7 @@ const download = async (type, id) => {
       return;
     }
 
-    const url = URL.createObjectURL(data);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `mix-${id}.${type}`;
-    a.click();
+    downloadBlob(data, `mix-${id}.${type === 'excel' ? 'xlsx' : 'pdf'}`);
   } catch (error) {
     console.error(`Error downloading ${type}:`, error);
     alert(`Error downloading ${type.toUpperCase()}: ${error.response?.data?.message || error.message}`);

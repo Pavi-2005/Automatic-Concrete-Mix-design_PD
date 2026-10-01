@@ -5,6 +5,19 @@ const API = axios.create({
   headers: { 'Content-Type': 'application/json' }
 });
 
+export const downloadBlob = (data, filename) => {
+  const url = URL.createObjectURL(data);
+  const link = document.createElement('a');
+
+  link.href = url;
+  link.download = filename;
+  link.style.display = 'none';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+};
+
 API.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
   if (token) config.headers.Authorization = `Bearer ${token}`;

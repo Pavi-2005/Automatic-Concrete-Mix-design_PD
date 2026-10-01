@@ -9,16 +9,15 @@ const Calculator = () => {
     maxAggregateSize: 20,
     exposureCondition: 'moderate',
     concreteType: 'reinforced',
-    minCementContent: 0,
     slump: 50,
     placingMethod: 'vibrated',
-    standardDeviation: 5,
+    pumpCaReductionPercent: 10,
+    aggregateShape: 'angular',
+    siteControl: 'good',
     faZone: 'zone2',
     spGravityCement: 3.15,
     spGravityFa: 2.6,
     spGravityCa: 2.7,
-    mineralAdmixtureType: '',
-    waterCementRatio: 0.45,
     needSuperplasticizer: false,
     superplasticizerPercentage: 0,
     specimenType: 'cube',
@@ -38,8 +37,8 @@ const Calculator = () => {
     setError('');
 
     // Validate superplasticizer
-    if (formData.needSuperplasticizer && formData.superplasticizerPercentage > 2) {
-      setError('Superplasticizer percentage must be below 2%');
+    if (formData.needSuperplasticizer && formData.superplasticizerPercentage > 5) {
+      setError('Superplasticizer percentage must not exceed 5%');
       setLoading(false);
       return;
     }
@@ -121,6 +120,16 @@ const Calculator = () => {
           </div>
 
           <div className="field-row">
+            <label>Coarse Aggregate Shape</label>
+            <select value={formData.aggregateShape} onChange={e => setFormData({...formData, aggregateShape: e.target.value})}>
+              <option value="angular">Angular (Table 4 baseline)</option>
+              <option value="subAngular">Sub-angular (water −10 kg/m³)</option>
+              <option value="partlyCrushedGravel">Gravel with some crushed particles (water −15 kg/m³)</option>
+              <option value="roundedGravel">Rounded gravel (water −20 kg/m³)</option>
+            </select>
+          </div>
+
+          <div className="field-row">
             <label>Exposure Condition</label>
             <select value={formData.exposureCondition} onChange={e => setFormData({...formData, exposureCondition: e.target.value})}>
               <option value="mild">Mild</option>
@@ -156,16 +165,15 @@ const Calculator = () => {
             <div className="field-row">
               <label>Superplasticizer Percentage (%)</label>
               <input type="number" min="0" max="5" step="0.1" value={formData.superplasticizerPercentage} onChange={e => setFormData({...formData, superplasticizerPercentage: parseFloat(e.target.value)})} />
-              {formData.superplasticizerPercentage > 2 && <p style={{color: 'red', fontSize: '0.8em'}}>More than limit (2%), please choose below 2%</p>}
+              {formData.superplasticizerPercentage > 5 && <p style={{color: 'red', fontSize: '0.8em'}}>Above the recommended 5% limit.</p>}
             </div>
           )}
 
           <div className="field-row">
-            <label>Standard Deviation (N/mm²)</label>
-            <select value={formData.standardDeviation} onChange={e => setFormData({...formData, standardDeviation: parseFloat(e.target.value)})}>
-              <option value={4}>4</option>
-              <option value={5}>5</option>
-              <option value={6}>6</option>
+            <label>Site Control</label>
+            <select value={formData.siteControl} onChange={e => setFormData({...formData, siteControl: e.target.value})}>
+              <option value="good">Good (IS 10262 Table 2 assumed S)</option>
+              <option value="fair">Fair (Table 2 assumed S + 1 N/mm²)</option>
             </select>
           </div>
 
@@ -186,6 +194,14 @@ const Calculator = () => {
               <option value="pump">Pump</option>
             </select>
           </div>
+
+          {formData.placingMethod === 'pump' && (
+            <div className="field-row">
+              <label>Pump CA Reduction (%)</label>
+              <input type="number" min="0" max="10" step="0.1" value={formData.pumpCaReductionPercent} onChange={e => setFormData({...formData, pumpCaReductionPercent: parseFloat(e.target.value) || 0})} />
+              <p style={{ fontSize: '0.8em' }}>IS 10262:2019 Clause 5.5.2: reduce estimated coarse aggregate content by up to 10%. No fixed pump-water addition is applied.</p>
+            </div>
+          )}
 
           <div className="field-row">
             <label>Cement Specific Gravity</label>

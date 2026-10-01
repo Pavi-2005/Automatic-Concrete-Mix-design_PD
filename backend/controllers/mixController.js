@@ -1,6 +1,8 @@
 const { calculateMixDesign, validateInputs } = require('../services/mixDesignService');
 const MixDesign = require('../models/MixDesign');
-const PDFDocument = require('pdfkit');
+const pdfkit = require('pdfkit');
+const { createPdfDocumentWithTables } = require('pdfkit-table');
+const PDFDocument = createPdfDocumentWithTables(pdfkit);
 const ExcelJS = require('exceljs');
 const auth = require('../middleware/auth');
 
@@ -156,20 +158,66 @@ const exportPDF = async (req, res) => {
     });
 
     // Final Mix Proportions
-    doc.addPage();
-    doc.fontSize(14).font('Helvetica-Bold').text('Final Mix Proportions');
+    doc.fontSize(14).font('Helvetica-Bold').text(' Mix Design');
     doc.moveDown(0.5);
 
     const finalMix = mix.resultData.finalMix;
-    doc.fontSize(12).font('Helvetica-Bold').text('Materials per Cubic Meter of Concrete:');
-    doc.moveDown(0.5);
+    const perCubicMeter = {
+      cement: Number(finalMix.cement),
+      fineAggregate: Number(finalMix.fa),
+      coarseAggregate: Number(finalMix.ca),
+      water: Number(finalMix.water)
+    };
+    const oneCube = Object.fromEntries(
+      Object.entries(perCubicMeter).map(([material, value]) => [
+        material,
+        Number((value * 3.3e-3 * 1.54).toFixed(2))
+      ])
+    );
+    const threeCubes = Object.fromEntries(
+      Object.entries(oneCube).map(([material, value]) => [material, value * 3])
+    );
+    const mixRow = (label, values) => ({
+      mixDesign: `bold:${label}`,
+      cement: values.cement.toFixed(2),
+      fineAggregate: values.fineAggregate.toFixed(2),
+      coarseAggregate: values.coarseAggregate.toFixed(2),
+      water: values.water.toFixed(2)
+    });
 
-    doc.fontSize(11).font('Helvetica');
-    doc.text(`• Cement: ${finalMix.cement} kg/m³`);
-    doc.text(`• Water: ${finalMix.water} kg/m³`);
-    doc.text(`• Fine Aggregate: ${finalMix.fa} kg/m³`);
-    doc.text(`• Coarse Aggregate: ${finalMix.ca} kg/m³`);
-    doc.text(`• Water-Cement Ratio: ${finalMix.w_c_ratio}`);
+    await doc.table({
+      headers: [
+        { label: 'Mix Design', property: 'mixDesign', width: 75, align: 'center', headerAlign: 'center', headerColor: '#D9E2F3', headerOpacity: 1 },
+        { label: 'Cement (kg)', property: 'cement', width: 95, align: 'center', headerAlign: 'center', headerColor: '#D9E2F3', headerOpacity: 1 },
+        { label: 'Fine Aggregate (kg)', property: 'fineAggregate', width: 115, align: 'center', headerAlign: 'center', headerColor: '#D9E2F3', headerOpacity: 1 },
+        { label: 'Coarse Aggregate (kg)', property: 'coarseAggregate', width: 115, align: 'center', headerAlign: 'center', headerColor: '#D9E2F3', headerOpacity: 1 },
+        { label: 'Water (kg)', property: 'water', width: 112, align: 'center', headerAlign: 'center', headerColor: '#D9E2F3', headerOpacity: 1 }
+      ],
+      data: [
+        mixRow('Per m³', perCubicMeter),
+        mixRow('Ratio', {
+          cement: 1,
+          fineAggregate: perCubicMeter.fineAggregate / perCubicMeter.cement,
+          coarseAggregate: perCubicMeter.coarseAggregate / perCubicMeter.cement,
+          water: perCubicMeter.water / perCubicMeter.cement
+        }),
+        mixRow('1 Cube', oneCube),
+        mixRow('3 Cubes', threeCubes)
+      ]
+    }, {
+      width: 512,
+      padding: 5,
+      columnSpacing: 0,
+      divider: {
+        header: { disabled: false, width: 0.8, opacity: 1 },
+        horizontal: { disabled: false, width: 0.5, opacity: 1 },
+        vertical: { disabled: false, width: 0.5, opacity: 1 }
+      },
+      prepareHeader: () => doc.font('Helvetica-Bold').fontSize(8),
+      prepareRow: (row, indexColumn) => doc.font(indexColumn === 0 ? 'Helvetica-Bold' : 'Helvetica').fontSize(9)
+    });
+    doc.moveDown(0.5);
+    doc.fontSize(10).font('Helvetica').text(`Water-Cement Ratio: ${Number(finalMix.w_c_ratio).toFixed(3)}`);
 
     const corrections = mix.resultData.corrections;
     const baseMix = mix.resultData.baseMix;
@@ -181,6 +229,12 @@ const exportPDF = async (req, res) => {
       doc.text(`Absorption Water: ${corrections.totalAbsorptionWater} kg/m³ (FA ${corrections.faAbsorptionWater}, CA ${corrections.caAbsorptionWater})`);
       doc.text(`Wastage: ${corrections.wastagePercentage}% (cement, fine aggregate, coarse aggregate only)`);
       doc.text(`Base Mix: Cement ${baseMix.cement}, Water ${baseMix.water}, FA ${baseMix.fa}, CA ${baseMix.ca} kg/m³`);
+    }
+
+    if (corrections?.baseCoarseAggregateMass != null) {
+      doc.text(`CA: ${corrections.baseCoarseAggregateMass} / (1 + ${corrections.coarseAggregateAbsorption}/100) = ${corrections.absorptionCorrectedCoarseAggregateMass}; after wastage = ${corrections.wastageAdjustedCoarseAggregate} kg/m3`);
+      doc.text(`FA: ${corrections.baseFineAggregateMass} / (1 + ${corrections.fineAggregateAbsorption}/100) = ${corrections.absorptionCorrectedFineAggregateMass}; after wastage = ${corrections.wastageAdjustedFineAggregate} kg/m3`);
+      doc.text(`Cement after ${corrections.wastagePercentage}% wastage = ${corrections.wastageAdjustedCement} kg/m3`);
     }
 
     if (mix.resultData.specimenResult) {

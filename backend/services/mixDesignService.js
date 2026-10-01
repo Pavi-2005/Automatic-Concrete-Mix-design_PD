@@ -9,6 +9,12 @@ const STANDARDS = {
     'M30': 5.0, 'M35': 5.0, 'M40': 5.0, 'M45': 5.0, 'M50': 5.0, 'M55': 5.0, 'M60': 5.0,
     'M65': 6.0, 'M70': 6.0, 'M75': 6.0, 'M80': 6.0
   },
+  // IS 10262 Table 1: X factor for target mean strength (Clause 4.2)
+  targetStrengthFactor: {
+    'M25': 5.5,
+    'M30': 6.5, 'M35': 6.5, 'M40': 6.5, 'M45': 6.5, 'M50': 6.5, 'M55': 6.5, 'M60': 6.5,
+    'M65': 8.0, 'M70': 8.0, 'M75': 8.0, 'M80': 8.0
+  },
   // IS 456 Table 5: durability requirements differ by concrete type.
   exposureLimits: {
     reinforced: {
@@ -30,7 +36,7 @@ const STANDARDS = {
   // For nominal maximum size of aggregate
   waterContent: {
     10: 208,
-    12.5: 197, // interpolated between 10 and 20
+    12.5: 202.5, // linearly interpolated between the 10 mm and 20 mm Table 4 values
     20: 186,
     40: 165
   },
@@ -38,7 +44,8 @@ const STANDARDS = {
   // For W/C ratio 0.50, adjusted values per zone
   coarseAggregateVolume: {
     10: { 'zone1': 0.48, 'zone2': 0.50, 'zone3': 0.52, 'zone4': 0.54 },
-    12.5: { 'zone1': 0.55, 'zone2': 0.57, 'zone3': 0.59, 'zone4': 0.61 },
+    // Linearly interpolated at 12.5 mm between the 10 mm and 20 mm Table 5 values.
+    12.5: { 'zone1': 0.51, 'zone2': 0.53, 'zone3': 0.55, 'zone4': 0.57 },
     20: { 'zone1': 0.60, 'zone2': 0.62, 'zone3': 0.64, 'zone4': 0.66 },
     40: { 'zone1': 0.69, 'zone2': 0.71, 'zone3': 0.72, 'zone4': 0.73 }
   },
@@ -138,29 +145,24 @@ const getWcRatioFromStrength = (f_target, cementType) => {
 };
 
 /**
- * Get standard deviation based on number of test results per IS 10262:2019 Table 2
+ * Get assumed standard deviation per IS 10262:2019 Table 2.
+ * Table 2 values apply to good site control. Table 2 Note 1 requires an
+ * increase of 1 N/mm² where site control is fair.
  * @param {string} grade - Concrete grade (M20, M30, etc.)
- * @param {number} testResultsCount - Number of test results available
+ * @param {'good'|'fair'} siteControl - Degree of site control
  * @returns {number} Standard deviation (MPa)
  */
-const getTFactor = (testResultsCount = 30) => {
-  if (testResultsCount >= 30) return 1.65;
-  if (testResultsCount >= 10) return 1.80;
-  return 1.96;
-};
-
-const getStandardDeviation = (grade, testResultsCount = 30) => {
+const getStandardDeviation = (grade, siteControl = 'good') => {
   const baseSD = STANDARDS.standardDeviation[grade] || 5.0;
-  return baseSD + (testResultsCount >= 30 ? 0.0 : testResultsCount >= 10 ? 1.0 : 2.0);
+  return baseSD + (siteControl === 'fair' ? 1.0 : 0.0);
 };
 
 const calculateMixDesign = async (inputData, userId) => {
   console.log('Calc inputData:', JSON.stringify(inputData, null, 2));
   const {
     grade = 'M30', cementType = 'OPC 43', maxAggregateSize = 20, exposureCondition = 'moderate', concreteType = 'reinforced',
-    minCementContent = 0, slump = 50, placingMethod = 'vibrated', standardDeviation = null,
+    slump = 50, placingMethod = 'vibrated', pumpCaReductionPercent = 10, aggregateShape = 'angular', siteControl = 'good',
     faZone = 'zone2', spGravityCement = 3.15, spGravityFa = 2.6, spGravityCa = 2.7,
-    mineralAdmixtureType = '', waterCementRatio = null, testResultsCount = 30,
     needSuperplasticizer = false, superplasticizerPercentage = 0, specimenType = 'cube', specimenCount = 1,
     caWaterAbsorption = 0, faWaterAbsorption = 0, wastagePercentage = 3
   } = inputData;
@@ -172,11 +174,13 @@ const calculateMixDesign = async (inputData, userId) => {
   const fck_input = parseInt(grade.replace('M', ''), 10);
   const specimenFactor = STANDARDS.specimenFactors[specimenType] || 1.0;
   const fck_cube = specimenType === 'cube' ? fck_input : fck_input * specimenFactor;
-  const actualSD = standardDeviation || getStandardDeviation(grade, testResultsCount);
-  const tFactor = getTFactor(testResultsCount);
-  const f_target_cube = fck_cube + tFactor * actualSD;
+  const actualSD = getStandardDeviation(grade, siteControl);
+  const targetStrengthFactor = STANDARDS.targetStrengthFactor[grade] || 6.5;
+  const targetByStandardDeviation = fck_cube + 1.65 * actualSD;
+  const targetByFactor = fck_cube + targetStrengthFactor;
+  const f_target_cube = Math.max(targetByStandardDeviation, targetByFactor);
   const f_target = specimenType === 'cube' ? f_target_cube : f_target_cube / specimenFactor;
-  console.log(`Step 1: Target strength: ${f_target.toFixed(1)} MPa (${specimenType} input fck=${fck_input}, cube equivalent=${fck_cube}, SD=${actualSD}, t=${tFactor})`);
+  console.log(`Step 1: Target strength: ${f_target.toFixed(1)} MPa (${specimenType} input fck=${fck_input}, cube equivalent=${fck_cube}, S=${actualSD}, X=${targetStrengthFactor})`);
 
   // Step 2: Water/Cement ratio (IS 10262:2019 Clause 4.2.2)
   const wc_strength = getWcRatioFromStrength(f_target_cube, normalizedCementType);
@@ -187,15 +191,19 @@ const calculateMixDesign = async (inputData, userId) => {
   console.log(`Step 2: w/c ratio: ${wc_ratio.toFixed(3)} (strength: ${wc_strength.toFixed(3)}, durability: ${wc_durability})`);
 
   // Step 3: Water content (IS 10262:2019 Table 4, Clause 5.3)
-  let water_content = STANDARDS.waterContent[maxAggregateSize] || 186;
+  const baseWaterContent = STANDARDS.waterContent[maxAggregateSize] || 186;
+  const aggregateShapeWaterAdjustments = {
+    angular: 0,
+    subAngular: -10,
+    partlyCrushedGravel: -15,
+    roundedGravel: -20
+  };
+  const aggregateShapeWaterAdjustment = aggregateShapeWaterAdjustments[aggregateShape] ?? 0;
+  let water_content = baseWaterContent + aggregateShapeWaterAdjustment;
   const slumpIncrease = Math.max(0, slump - 50);
   const slumpIncrement = Math.ceil(slumpIncrease / 25);
   const slumpAdjustmentPercent = slumpIncrement * 0.03;
   water_content *= 1 + slumpAdjustmentPercent;
-
-  if (placingMethod === 'pump') {
-    water_content += 10;
-  }
 
   let superplasticizerReduction = 0;
   if (needSuperplasticizer && superplasticizerPercentage > 0) {
@@ -204,29 +212,49 @@ const calculateMixDesign = async (inputData, userId) => {
   }
 
   water_content = Math.max(140, water_content);
-  console.log(`Step 3: Water content: ${water_content.toFixed(0)} kg/m³ (base: ${STANDARDS.waterContent[maxAggregateSize]}, slump adj: ${(slumpAdjustmentPercent * 100).toFixed(1)}%, pump: ${placingMethod === 'pump' ? 10 : 0}kg, SP reduction: ${superplasticizerReduction.toFixed(1)}%)`);
+  console.log(`Step 3: Water content: ${water_content.toFixed(0)} kg/m³ (base: ${baseWaterContent}, shape: ${aggregateShapeWaterAdjustment}kg, slump adj: ${(slumpAdjustmentPercent * 100).toFixed(1)}%, SP reduction: ${superplasticizerReduction.toFixed(1)}%)`);
+
+  const water_content_before_cement_adjustment = water_content;
 
   // Step 4: Cement content (IS 10262:2019 Clause 7.2)
   const cementLimits = { min: exposureLimits.minCement, max: STANDARDS.maxCementContent };
-  const effectiveMinCement = Math.max(minCementContent || 0, cementLimits.min);
+  const effectiveMinCement = cementLimits.min;
   let cement_content = water_content / wc_ratio;
+  let cementFloored = false;
+  let cementCapped = false;
 
   if (cement_content < effectiveMinCement) {
+    cementFloored = true;
     cement_content = effectiveMinCement;
     water_content = cement_content * wc_ratio;
   }
 
   if (cement_content > cementLimits.max) {
+    cementCapped = true;
     cement_content = cementLimits.max;
     water_content = cement_content * wc_ratio;
   }
 
   console.log(`Step 4: Cement: ${cement_content.toFixed(0)} kg/m³ (min: ${effectiveMinCement}, max: ${cementLimits.max})`);
 
+  const cementCapWaterAdjustment = water_content_before_cement_adjustment - water_content;
+  const cementAdjustmentNote = cementCapped
+    ? `Cement content capped at ${cementLimits.max} kg/m³ per IS 456 Cl. 8.2.4.2; water content adjusted to ${water_content.toFixed(0)} kg/m³ to maintain w/c ratio of ${wc_ratio.toFixed(3)}.`
+    : cementFloored
+      ? `Cement content floored at ${effectiveMinCement} kg/m³ to meet the minimum cement-content requirement; water content adjusted to ${water_content.toFixed(0)} kg/m³ to maintain w/c ratio of ${wc_ratio.toFixed(3)}.`
+      : null;
+
   // Step 5: Aggregate proportions using IS 10262:2019 Table 5 (Clause 5.5)
   let caVolumeRatio = STANDARDS.coarseAggregateVolume[maxAggregateSize]?.[faZone] || 0.62;
-  const wcAdjustment = (0.5 - wc_ratio) / 0.05;
-  caVolumeRatio = Math.max(0.45, Math.min(0.75, caVolumeRatio - wcAdjustment * 0.01));
+  // For every 0.05 below the 0.50 reference w/c ratio, increase CA by 0.01;
+  // for every 0.05 above it, decrease CA by 0.01. Apply proportionally.
+  const wcAdjustment = ((0.50 - wc_ratio) / 0.05) * 0.01;
+  caVolumeRatio = Math.max(0.45, Math.min(0.75, caVolumeRatio + wcAdjustment));
+  const caVolumeRatioBeforePumpReduction = caVolumeRatio;
+  const appliedPumpCaReductionPercent = placingMethod === 'pump'
+    ? Math.max(0, Math.min(10, Number(pumpCaReductionPercent)))
+    : 0;
+  caVolumeRatio *= 1 - appliedPumpCaReductionPercent / 100;
 
   const airPercent = STANDARDS.airContent[maxAggregateSize] || 0.5;
   const volumeOfAir = airPercent / 100;
@@ -244,11 +272,16 @@ const calculateMixDesign = async (inputData, userId) => {
 
   console.log(`Step 5: CA ratio: ${caVolumeRatio.toFixed(3)}, Air: ${airPercent}%, CA: ${ca_content.toFixed(0)}, FA: ${fa_content.toFixed(0)} kg/m³`);
 
-  // Step 6: dry aggregates absorb water from the batch. Apply this once only;
-  // the base aggregate quantities remain those derived by absolute volume.
+  // Step 6: Step 5 aggregate masses are SSD quantities. When aggregates are
+  // batched oven-dry, derive their dry masses and the water required to reach
+  // SSD. This added batch water does not change the effective design w/c ratio.
+  const dryAggregateQuantities = {
+    fa: fa_content / (1 + faWaterAbsorption / 100),
+    ca: ca_content / (1 + caWaterAbsorption / 100)
+  };
   const absorptionWater = {
-    fa: fa_content * (faWaterAbsorption / 100),
-    ca: ca_content * (caWaterAbsorption / 100)
+    fa: fa_content - dryAggregateQuantities.fa,
+    ca: ca_content - dryAggregateQuantities.ca
   };
   const totalAbsorptionWater = absorptionWater.fa + absorptionWater.ca;
   const wastageFactor = 1 + (wastagePercentage / 100);
@@ -261,6 +294,7 @@ const calculateMixDesign = async (inputData, userId) => {
     units: 'kg/m³'
   };
   const corrections = {
+    effectiveWcRatio: wc_ratio,
     entrappedAirPercent: airPercent,
     airVolume: parseFloat(volumeOfAir.toFixed(4)),
     faWaterAbsorption,
@@ -268,11 +302,29 @@ const calculateMixDesign = async (inputData, userId) => {
     faAbsorptionWater: parseFloat(absorptionWater.fa.toFixed(1)),
     caAbsorptionWater: parseFloat(absorptionWater.ca.toFixed(1)),
     totalAbsorptionWater: parseFloat(totalAbsorptionWater.toFixed(1)),
+    theoreticalMixBasis: '1 m³ design mix with aggregates in SSD condition',
+    dryAggregateQuantities: {
+      fa: parseFloat(dryAggregateQuantities.fa.toFixed(1)),
+      ca: parseFloat(dryAggregateQuantities.ca.toFixed(1))
+    },
+    batchWater: {
+      effectiveDesignWater: parseFloat(water_content.toFixed(1)),
+      absorptionWater: parseFloat(totalAbsorptionWater.toFixed(1)),
+      surfaceMoistureWater: 0,
+      actualBatchWater: parseFloat((water_content + totalAbsorptionWater).toFixed(1))
+    },
     wastagePercentage,
     wastage: {
       cement: parseFloat((cement_content * (wastageFactor - 1)).toFixed(1)),
       fa: parseFloat((fa_content * (wastageFactor - 1)).toFixed(1)),
       ca: parseFloat((ca_content * (wastageFactor - 1)).toFixed(1))
+    },
+    procurementQuantities: {
+      cement: parseFloat((cement_content * wastageFactor).toFixed(1)),
+      faSSD: parseFloat((fa_content * wastageFactor).toFixed(1)),
+      caSSD: parseFloat((ca_content * wastageFactor).toFixed(1)),
+      faDry: parseFloat((dryAggregateQuantities.fa * wastageFactor).toFixed(1)),
+      caDry: parseFloat((dryAggregateQuantities.ca * wastageFactor).toFixed(1))
     },
     exposure: { concreteType, ...exposureLimits },
     warnings: [
@@ -319,11 +371,11 @@ const calculateMixDesign = async (inputData, userId) => {
   };
 
   const steps = [
-    { step: 1, targetStrength: f_target.toFixed(1), standardDeviation: actualSD.toFixed(1), inputFck: fck_input, specimenType, specimenCount },
+    { step: 1, targetStrength: f_target.toFixed(1), standardDeviation: actualSD.toFixed(1), targetByStandardDeviation: targetByStandardDeviation.toFixed(1), targetByFactor: targetByFactor.toFixed(1), targetStrengthFactor: targetStrengthFactor.toFixed(1), siteControl, inputFck: fck_input, specimenType, specimenCount },
     { step: 2, wcRatio: wc_ratio.toFixed(3), wcStrength: wc_strength.toFixed(3), wcDurability: wc_durability.toFixed(3) },
-    { step: 3, waterContent: water_content.toFixed(0), baseWater: STANDARDS.waterContent[maxAggregateSize], slumpAdjustment: (slumpAdjustmentPercent * 100).toFixed(1), superplasticizerReduction: superplasticizerReduction.toFixed(0) },
-    { step: 4, cementContent: cement_content.toFixed(0), cementLimits: `${cementLimits.min}-${cementLimits.max}`, minGrade: exposureLimits.minGrade || 'None', concreteType },
-    { step: 5, caVolumeRatio: caVolumeRatio.toFixed(3), airContent: airPercent.toFixed(2), airVolume: volumeOfAir.toFixed(4), caContent: ca_content.toFixed(0), faContent: fa_content.toFixed(0) },
+    { step: 3, waterContent: water_content_before_cement_adjustment.toFixed(0), baseWater: baseWaterContent, aggregateShape, aggregateShapeWaterAdjustment, slumpAdjustment: (slumpAdjustmentPercent * 100).toFixed(1), superplasticizerReduction: superplasticizerReduction.toFixed(0) },
+    { step: 4, cementContent: cement_content.toFixed(0), cementLimits: `${cementLimits.min}-${cementLimits.max}`, minGrade: exposureLimits.minGrade || 'None', concreteType, cementCapped, cementFloored, cementCapWaterAdjustment: parseFloat(cementCapWaterAdjustment.toFixed(1)), note: cementAdjustmentNote },
+    { step: 5, caVolumeRatio: caVolumeRatio.toFixed(3), caVolumeRatioBeforePumpReduction: caVolumeRatioBeforePumpReduction.toFixed(3), pumpCaReductionPercent: appliedPumpCaReductionPercent, airContent: airPercent.toFixed(2), airVolume: volumeOfAir.toFixed(4), caContent: ca_content.toFixed(0), faContent: fa_content.toFixed(0) },
     { step: 6, moistureCorrections: { additionalWater: totalAbsorptionWater.toFixed(1), faAbsorption: faWaterAbsorption, caAbsorption: caWaterAbsorption, faAbsorptionWater: absorptionWater.fa.toFixed(1), caAbsorptionWater: absorptionWater.ca.toFixed(1), wastagePercentage } }
   ];
 
@@ -382,17 +434,20 @@ const validateInputs = (input) => {
   if (input.specimenCount == null || input.specimenCount < 1 || input.specimenCount > 100) {
     errors.push('Number of specimens must be between 1 and 100');
   }
-  if (input.standardDeviation == null || input.standardDeviation < 1 || input.standardDeviation > 10) {
-    errors.push('Standard deviation must be between 1 and 10');
+  if (input.siteControl && !['good', 'fair'].includes(input.siteControl)) {
+    errors.push('Site control must be good or fair');
+  }
+  if (input.aggregateShape && !['angular', 'subAngular', 'partlyCrushedGravel', 'roundedGravel'].includes(input.aggregateShape)) {
+    errors.push('Invalid aggregate shape');
+  }
+  if (input.pumpCaReductionPercent != null && (input.pumpCaReductionPercent < 0 || input.pumpCaReductionPercent > 10)) {
+    errors.push('Pump coarse aggregate reduction must be between 0 and 10%');
   }
   if (input.needSuperplasticizer && (input.superplasticizerPercentage < 0 || input.superplasticizerPercentage > 5)) {
     errors.push('Superplasticizer percentage must be 0-5%');
   }
-  if (input.testResultsCount && (input.testResultsCount < 1 || input.testResultsCount > 100)) {
-    errors.push('Test results count must be 1-100');
-  }
-  if (input.spGravityCement && (input.spGravityCement < 3.0 || input.spGravityCement > 3.2)) {
-    errors.push('Cement specific gravity must be 3.0-3.2');
+  if (input.spGravityCement && (input.spGravityCement < 2.0 || input.spGravityCement > 3.2)) {
+    errors.push('Cement specific gravity must be 2.0-3.2');
   }
   if (input.spGravityFa && (input.spGravityFa < 2.5 || input.spGravityFa > 2.8)) {
     errors.push('Fine aggregate specific gravity must be 2.5-2.8');
@@ -404,4 +459,3 @@ const validateInputs = (input) => {
 };
 
 module.exports = { calculateMixDesign, validateInputs };
-

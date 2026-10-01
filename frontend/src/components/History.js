@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { mixAPI } from '../services/api';
+import { downloadBlob, mixAPI } from '../services/api';
 import { Link, useNavigate } from 'react-router-dom';
 
 const History = () => {
@@ -12,21 +12,13 @@ const History = () => {
 
   const downloadPDF = (id) => {
     mixAPI.pdf(id).then(({ data }) => {
-      const url = URL.createObjectURL(data);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `mix-${id}.pdf`;
-      a.click();
+      downloadBlob(data, `mix-${id}.pdf`);
     });
   };
 
   const downloadExcel = (id) => {
     mixAPI.excel(id).then(({ data }) => {
-      const url = URL.createObjectURL(data);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `mix-${id}.xlsx`;
-      a.click();
+      downloadBlob(data, `mix-${id}.xlsx`);
     });
   };
 
